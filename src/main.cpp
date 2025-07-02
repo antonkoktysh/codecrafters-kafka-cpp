@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <string>
 
 int main(int argc, char *argv[]) {
   // Disable output buffering
@@ -59,13 +58,32 @@ int main(int argc, char *argv[]) {
   std::cerr << "Logs from your program will appear here!\n";
 
   // Uncomment this block to pass the first stage
-
   int client_fd =
       accept(server_fd, reinterpret_cast<struct sockaddr *>(&client_addr),
              &client_addr_len);
   std::cout << "Client connected\n";
-  close(client_fd);
 
+  // Подготовка ответа (8 байт)
+  char response[8];
+
+  // 1. message_size: 4 байта, любое значение (используем 0)
+  uint32_t message_size = 0;                        // 0x00000000
+  uint32_t net_message_size = htonl(message_size);  // Преобразуем в big-endian
+  memcpy(response, &net_message_size, sizeof(net_message_size));
+
+  // 2. correlation_id: 4 байта, значение = 7
+  uint32_t correlation_id = 7;  // 0x00000007
+  uint32_t net_correlation_id =
+      htonl(correlation_id);  // Преобразуем в big-endian
+  memcpy(response + 4, &net_correlation_id, sizeof(net_correlation_id));
+
+  // Отправляем ответ клиенту
+  ssize_t bytes_sent = send(client_fd, response, sizeof(response), 0);
+  if (bytes_sent != sizeof(response)) {
+    std::cerr << "Failed to send full response\n";
+  }
+
+  close(client_fd);
   close(server_fd);
   return 0;
 }
