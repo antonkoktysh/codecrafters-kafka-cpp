@@ -63,21 +63,37 @@ int main(int argc, char *argv[]) {
              &client_addr_len);
   std::cout << "Client connected\n";
 
-  // Подготовка ответа (8 байт)
+  char buffer[1024];
+  ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer), 0);
+  if (bytes_received < 0) {
+    std::cout << "Failed to receive data from client\n";
+    close(client_fd);
+    close(server_fd);
+    return 1;
+  }
+
+  if (bytes_received < 12) {
+    std::cerr << "Expected at least 12 bytes" << std::endl;
+    close(client_fd);
+    close(server_fd);
+    return 1;
+  }
+
   char response[8];
 
-  // 1. message_size: 4 байта, любое значение (используем 0)
-  uint32_t message_size = 0;                        // 0x00000000
-  uint32_t net_message_size = htonl(message_size);  // Преобразуем в big-endian
+  uint32_t correlation_id;
+  memcpy(&correlation_id, buffer + 8, sizeof(correlation_id));
+  // std::cout << correlation_id << std::endl;
+  // 1. message_size: 4 bytes, any value
+  uint32_t message_size = 0;
+  uint32_t net_message_size = htonl(message_size);  // To big-endian
   memcpy(response, &net_message_size, sizeof(net_message_size));
 
-  // 2. correlation_id: 4 байта, значение = 7
-  uint32_t correlation_id = 7;  // 0x00000007
-  uint32_t net_correlation_id =
-      htonl(correlation_id);  // Преобразуем в big-endian
+  // 2. correlation_id: 4 bytes, value = 7
+  uint32_t net_correlation_id = htonl(correlation_id);  // To big-endian
+  // std::cout << net_correlation_id << std::endl;
   memcpy(response + 4, &net_correlation_id, sizeof(net_correlation_id));
 
-  // Отправляем ответ клиенту
   ssize_t bytes_sent = send(client_fd, response, sizeof(response), 0);
   if (bytes_sent != sizeof(response)) {
     std::cerr << "Failed to send full response\n";
