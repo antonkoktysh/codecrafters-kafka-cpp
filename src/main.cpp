@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
 
   uint32_t correlation_id;
   memcpy(&correlation_id, buffer + 8, sizeof(correlation_id));
-  // std::cout << correlation_id << std::endl;
+  std::cout << correlation_id << std::endl;
   // 1. message_size: 4 bytes, any value
   uint32_t message_size = 0;
   uint32_t net_message_size = htonl(message_size);  // To big-endian
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
   // 2. correlation_id: 4 bytes, value = 7
   uint32_t net_correlation_id = htonl(correlation_id);  // To big-endian
-  // std::cout << net_correlation_id << std::endl;
+  std::cout << net_correlation_id << std::endl;
   memcpy(response + 4, &net_correlation_id, sizeof(net_correlation_id));
 
   ssize_t bytes_sent = send(client_fd, response, sizeof(response), 0);
