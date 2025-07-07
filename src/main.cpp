@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
   // 2. correlation_id: 4 bytes, value = 7
   uint32_t net_correlation_id = htonl(correlation_id);  // To big-endian
   std::cout << net_correlation_id << std::endl;
-  memcpy(response + 4, &net_correlation_id, sizeof(net_correlation_id));
+  memcpy(response + 4, &correlation_id, sizeof(net_correlation_id));
 
   ssize_t bytes_sent = send(client_fd, response, sizeof(response), 0);
   if (bytes_sent != sizeof(response)) {
