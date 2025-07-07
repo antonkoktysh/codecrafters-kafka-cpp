@@ -7,7 +7,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-
+const int16_t MIN_API_VERSIONS = 0;
+const int16_t MAX_API_VERSIONS = 4;
+const int16_t UNSUPPORTED_VERSION_ERROR = 35;
 int main(int argc, char *argv[]) {
   // Disable output buffering
   std::cout << std::unitbuf;
@@ -79,20 +81,41 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  char response[8];
+  char response[10];
 
+  int16_t request_api_key;
+  int16_t request_api_version;
   uint32_t correlation_id;
+  memcpy(&request_api_key, buffer + 4, sizeof(request_api_key));
+  memcpy(&request_api_version, buffer + 6, sizeof(request_api_version));
   memcpy(&correlation_id, buffer + 8, sizeof(correlation_id));
-  std::cout << correlation_id << std::endl;
+
+  request_api_key = ntohs(request_api_key);
+  request_api_version = ntohs(request_api_version);
+
+  std::cerr << "Received request - API Key: " << request_api_key
+            << ", API Version: " << request_api_version
+            << ", Correlation ID: " << htonl(correlation_id) << std::endl;
+
+  // std::cout << correlation_id << std::endl;
+  // std::cout << htonl(correlation_id) << std::endl;
+  // std::cout << htonl(htonl(correlation_id)) << std::endl;
+
   // 1. message_size: 4 bytes, any value
-  uint32_t message_size = 0;
+  uint32_t message_size = 54;
   uint32_t net_message_size = htonl(message_size);  // To big-endian
   memcpy(response, &net_message_size, sizeof(net_message_size));
 
-  // 2. correlation_id: 4 bytes, value = 7
-  uint32_t net_correlation_id = htonl(correlation_id);  // To big-endian
-  std::cout << net_correlation_id << std::endl;
-  memcpy(response + 4, &correlation_id, sizeof(net_correlation_id));
+  int16_t error_code = 0;
+  if (request_api_key == 18 && (request_api_version < MIN_API_VERSIONS ||
+                                request_api_version > MAX_API_VERSIONS)) {
+    error_code = UNSUPPORTED_VERSION_ERROR;
+  }
+
+  int16_t net_error_code = htons(error_code);
+  memcpy(response, &net_message_size, sizeof(net_message_size));
+  memcpy(response + 4, &correlation_id, sizeof(correlation_id));
+  memcpy(response + 8, &net_error_code, sizeof(net_error_code));
 
   ssize_t bytes_sent = send(client_fd, response, sizeof(response), 0);
   if (bytes_sent != sizeof(response)) {
