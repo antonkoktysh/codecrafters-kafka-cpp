@@ -7,9 +7,38 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-const int16_t MIN_API_VERSIONS = 0;
-const int16_t MAX_API_VERSIONS = 4;
-const int16_t UNSUPPORTED_VERSION_ERROR = 35;
+
+enum class KafkaErrorCode : int16_t {
+  NONE = 0,
+  UNSUPPORTED_VERSION = 35,
+  INVALID_REQUEST = 42,
+  UNKNOWN_SERVER_ERROR = 48,
+};
+bool operator==(KafkaErrorCode a, int16_t b) {
+  return static_cast<int16_t>(a) == b;
+}
+
+bool operator==(int16_t a, KafkaErrorCode b) {
+  return a == static_cast<int16_t>(b);
+}
+
+enum class KafkaApiKey : int16_t {
+  PRODUCE = 0,
+  FETCH = 1,
+  LIST_OFFSETS = 2,
+  METADATA = 3,
+  LEADER_AND_ISR = 4,
+  STOP_REPLICA = 5,
+  API_VERSIONS = 18,
+};
+
+bool operator==(KafkaApiKey a, int16_t b) {
+  return static_cast<int16_t>(a) == b;
+}
+
+bool operator==(int16_t a, KafkaApiKey b) {
+  return a == static_cast<int16_t>(b);
+}
 int main(int argc, char *argv[]) {
   // Disable output buffering
   std::cout << std::unitbuf;
@@ -97,23 +126,25 @@ int main(int argc, char *argv[]) {
             << ", API Version: " << request_api_version
             << ", Correlation ID: " << htonl(correlation_id) << std::endl;
 
+  std::cout << request_api_version << std::endl;
+  std::cout << htons(request_api_version) << std::endl;
+  std::cout << htons(htons(request_api_version)) << std::endl;
+
+  std::cout << htonl(request_api_version) << std::endl;
   // std::cout << correlation_id << std::endl;
   // std::cout << htonl(correlation_id) << std::endl;
   // std::cout << htonl(htonl(correlation_id)) << std::endl;
 
-  // 1. message_size: 4 bytes, any value
   uint32_t message_size = 54;
-  uint32_t net_message_size = htonl(message_size);  // To big-endian
-  memcpy(response, &net_message_size, sizeof(net_message_size));
 
-  int16_t error_code = 0;
-  if (request_api_key == 18 && (request_api_version < MIN_API_VERSIONS ||
-                                request_api_version > MAX_API_VERSIONS)) {
-    error_code = UNSUPPORTED_VERSION_ERROR;
+  int16_t error_code = static_cast<int16_t>(KafkaErrorCode::NONE);
+  if (request_api_key == KafkaApiKey::API_VERSIONS &&
+      (request_api_version < 0 || request_api_version > 4)) {
+    error_code = static_cast<int16_t>(KafkaErrorCode::UNSUPPORTED_VERSION);
   }
 
   int16_t net_error_code = htons(error_code);
-  memcpy(response, &net_message_size, sizeof(net_message_size));
+  memcpy(response, &message_size, sizeof(message_size));
   memcpy(response + 4, &correlation_id, sizeof(correlation_id));
   memcpy(response + 8, &net_error_code, sizeof(net_error_code));
 
