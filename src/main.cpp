@@ -7,39 +7,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <vector>
 
-enum class KafkaErrorCode : int16_t {
-  NONE = 0,
-  UNSUPPORTED_VERSION = 35,
-  INVALID_REQUEST = 42,
-  UNKNOWN_SERVER_ERROR = 48,
-};
-bool operator==(KafkaErrorCode a, int16_t b) {
-  return static_cast<int16_t>(a) == b;
-}
+#include "KafkaResponse.h"
 
-bool operator==(int16_t a, KafkaErrorCode b) {
-  return a == static_cast<int16_t>(b);
-}
-
-enum class KafkaApiKey : int16_t {
-  PRODUCE = 0,
-  FETCH = 1,
-  LIST_OFFSETS = 2,
-  METADATA = 3,
-  LEADER_AND_ISR = 4,
-  STOP_REPLICA = 5,
-  API_VERSIONS = 18,
-};
-
-bool operator==(KafkaApiKey a, int16_t b) {
-  return static_cast<int16_t>(a) == b;
-}
-
-bool operator==(int16_t a, KafkaApiKey b) {
-  return a == static_cast<int16_t>(b);
-}
 int main(int argc, char *argv[]) {
   // Disable output buffering
   std::cout << std::unitbuf;
@@ -89,103 +59,26 @@ int main(int argc, char *argv[]) {
   // when running tests.
   std::cerr << "Logs from your program will appear here!\n";
 
-  // Uncomment this block to pass the first stage
   int client_fd =
       accept(server_fd, reinterpret_cast<struct sockaddr *>(&client_addr),
              &client_addr_len);
   std::cout << "Client connected\n";
 
+  // read from client
   char buffer[1024];
-  ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer), 0);
-  if (bytes_received < 0) {
-    std::cout << "Failed to receive data from client\n";
+  auto byte_read = recv(client_fd, buffer, sizeof(buffer), 0);
+  if (byte_read <= 0) {
+    std::cerr << "Coulnd't read from recv!\n";
     close(client_fd);
     close(server_fd);
-    return 1;
   }
-
-  if (bytes_received < 12) {
-    std::cerr << "Expected at least 12 bytes" << std::endl;
-    close(client_fd);
-    close(server_fd);
-    return 1;
-  }
-
-  int32_t message_size = 33;
-
-  std::vector<char> response(37);
-  uint32_t net_message_size = htonl(message_size);
-  memcpy(response.data(), &net_message_size, sizeof(net_message_size));
-
-  int16_t request_api_key;
-  memcpy(&request_api_key, buffer + 4, sizeof(request_api_key));
-
-  int16_t request_api_version;
-  memcpy(&request_api_version, buffer + 6, sizeof(request_api_version));
-
-  int32_t correlation_id;
-  memcpy(&correlation_id, buffer + 8, sizeof(correlation_id));
-
-  request_api_key = ntohs(request_api_key);
-  request_api_version = ntohs(request_api_version);
-
-  std::cout << "Received request - API Key: " << request_api_key
-            << ", API Version: " << request_api_version
-            << ", Correlation ID: " << htonl(correlation_id) << std::endl;
-
-  int16_t error_code = static_cast<int16_t>(KafkaErrorCode::NONE);
-  if (request_api_key == KafkaApiKey::API_VERSIONS &&
-      (request_api_version < 0 || request_api_version > 4)) {
-    error_code = static_cast<int16_t>(KafkaErrorCode::UNSUPPORTED_VERSION);
-  }
-  ssize_t sdbytes_sent = send(client_fd, response.data(), sizeof(response), 0);
+  ResponseBuilder response_builder;
+  const char *response_buffer = response_builder.BuildResponse(buffer);
+  size_t response_size = response_builder.GetResponseSize();
+  write(client_fd, response_buffer, response_size);
 
   close(client_fd);
   close(server_fd);
-  return 0;
 
-  int16_t net_error_code = htons(error_code);
-  memcpy(response.data(), &message_size, sizeof(message_size));
-  memcpy(response.data() + 4, &correlation_id, sizeof(correlation_id));
-  memcpy(response.data() + 8, &net_error_code, sizeof(net_error_code));
-
-  int8_t arr_length = 4;
-  arr_length = htons(arr_length);
-  memcpy(response.data() + 10, &arr_length, sizeof(arr_length));
-
-  size_t offset = 11;
-  for (size_t ind = 0; ind < 4; ++ind) {
-    int16_t api_key = static_cast<int16_t>(ind);
-    int16_t api_min_version = 0;
-    int16_t api_max_version = 17;
-    int8_t tag_buffer = 0;
-    api_key = htons(api_key);
-    api_min_version = htons(api_min_version);
-    api_max_version = htons(api_max_version);
-    memcpy(response.data() + offset, &api_key, sizeof(api_key));
-    offset += sizeof(api_key);
-    memcpy(response.data() + offset, &api_min_version, sizeof(api_min_version));
-    offset += sizeof(api_min_version);
-    memcpy(response.data() + offset, &api_max_version, sizeof(api_max_version));
-    offset += sizeof(api_max_version);
-    memcpy(response.data() + offset, &tag_buffer, sizeof(tag_buffer));
-    offset += sizeof(tag_buffer);
-  }
-  int32_t trottle_time = 0;
-  trottle_time = htonl(trottle_time);
-  memcpy(response.data() + offset, &trottle_time, sizeof(trottle_time));
-  offset += sizeof(trottle_time);
-
-  int8_t tag_buffer = 0;
-  memcpy(response.data() + offset, &tag_buffer, sizeof(tag_buffer));
-
-  std::cout << "fas" << std::endl;
-  ssize_t bytes_sent = send(client_fd, response.data(), sizeof(response), 0);
-  if (bytes_sent != sizeof(response)) {
-    std::cout << "Failed to send full response\n";
-  }
-
-  close(client_fd);
-  close(server_fd);
   return 0;
 }

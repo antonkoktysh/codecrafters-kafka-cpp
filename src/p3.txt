@@ -1,0 +1,160 @@
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+
+enum class KafkaErrorCode : int16_t {
+  NONE = 0,
+  UNSUPPORTED_VERSION = 35,
+  INVALID_REQUEST = 42,
+  UNKNOWN_SERVER_ERROR = 48,
+};
+bool operator==(KafkaErrorCode a, int16_t b) {
+  return static_cast<int16_t>(a) == b;
+}
+
+bool operator==(int16_t a, KafkaErrorCode b) {
+  return a == static_cast<int16_t>(b);
+}
+
+enum class KafkaApiKey : int16_t {
+  PRODUCE = 0,
+  FETCH = 1,
+  LIST_OFFSETS = 2,
+  METADATA = 3,
+  LEADER_AND_ISR = 4,
+  STOP_REPLICA = 5,
+  API_VERSIONS = 18,
+};
+
+bool operator==(KafkaApiKey a, int16_t b) {
+  return static_cast<int16_t>(a) == b;
+}
+
+bool operator==(int16_t a, KafkaApiKey b) {
+  return a == static_cast<int16_t>(b);
+}
+int main(int argc, char *argv[]) {
+  // Disable output buffering
+  std::cout << std::unitbuf;
+  std::cerr << std::unitbuf;
+
+  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_fd < 0) {
+    std::cerr << "Failed to create server socket: " << std::endl;
+    return 1;
+  }
+
+  // Since the tester restarts your program quite often, setting SO_REUSEADDR
+  // ensures that we don't run into 'Address already in use' errors
+  int reuse = 1;
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) <
+      0) {
+    close(server_fd);
+    std::cerr << "setsockopt failed: " << std::endl;
+    return 1;
+  }
+
+  struct sockaddr_in server_addr{};
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_addr.s_addr = INADDR_ANY;
+  server_addr.sin_port = htons(9092);
+
+  if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&server_addr),
+           sizeof(server_addr)) != 0) {
+    close(server_fd);
+    std::cerr << "Failed to bind to port 9092" << std::endl;
+    return 1;
+  }
+
+  int connection_backlog = 5;
+  if (listen(server_fd, connection_backlog) != 0) {
+    close(server_fd);
+    std::cerr << "listen failed" << std::endl;
+    return 1;
+  }
+
+  std::cout << "Waiting for a client to connect...\n";
+
+  struct sockaddr_in client_addr{};
+  socklen_t client_addr_len = sizeof(client_addr);
+
+  // You can use print statements as follows for debugging, they'll be visible
+  // when running tests.
+  std::cerr << "Logs from your program will appear here!\n";
+
+  // Uncomment this block to pass the first stage
+  int client_fd =
+      accept(server_fd, reinterpret_cast<struct sockaddr *>(&client_addr),
+             &client_addr_len);
+  std::cout << "Client connected\n";
+
+  char buffer[1024];
+  ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer), 0);
+  if (bytes_received < 0) {
+    std::cout << "Failed to receive data from client\n";
+    close(client_fd);
+    close(server_fd);
+    return 1;
+  }
+
+  if (bytes_received < 12) {
+    std::cerr << "Expected at least 12 bytes" << std::endl;
+    close(client_fd);
+    close(server_fd);
+    return 1;
+  }
+
+  char response[10];
+
+  int16_t request_api_key;
+  int16_t request_api_version;
+  uint32_t correlation_id;
+  memcpy(&request_api_key, buffer + 4, sizeof(request_api_key));
+  memcpy(&request_api_version, buffer + 6, sizeof(request_api_version));
+  memcpy(&correlation_id, buffer + 8, sizeof(correlation_id));
+
+  request_api_key = ntohs(request_api_key);
+  request_api_version = ntohs(request_api_version);
+
+  std::cerr << "Received request - API Key: " << request_api_key
+            << ", API Version: " << request_api_version
+            << ", Correlation ID: " << htonl(correlation_id) << std::endl;
+
+  std::cout << request_api_version << std::endl;
+  std::cout << htons(request_api_version) << std::endl;
+  std::cout << htons(htons(request_api_version)) << std::endl;
+
+  std::cout << htonl(request_api_version) << std::endl;
+
+  // std::cout << correlation_id << std::endl;
+  // std::cout << htonl(correlation_id) << std::endl;
+  // std::cout << htonl(htonl(correlation_id)) << std::endl;
+
+  uint32_t message_size = 54;
+
+  int16_t error_code = static_cast<int16_t>(KafkaErrorCode::NONE);
+  if (request_api_key == KafkaApiKey::API_VERSIONS &&
+      (request_api_version < 0 || request_api_version > 4)) {
+    error_code = static_cast<int16_t>(KafkaErrorCode::UNSUPPORTED_VERSION);
+  }
+
+  int16_t net_error_code = htons(error_code);
+  memcpy(response, &message_size, sizeof(message_size));
+  memcpy(response + 4, &correlation_id, sizeof(correlation_id));
+  memcpy(response + 8, &net_error_code, sizeof(net_error_code));
+
+  ssize_t bytes_sent = send(client_fd, response, sizeof(response), 0);
+  if (bytes_sent != sizeof(response)) {
+    std::cerr << "Failed to send full response\n";
+  }
+
+  close(client_fd);
+  close(server_fd);
+  return 0;
+}
