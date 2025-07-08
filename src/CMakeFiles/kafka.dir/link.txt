@@ -1,1 +1,0 @@
-/opt/homebrew/opt/llvm/bin/clang++  -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/kafka.dir/CMakeFiles/4.0.3/CompilerIdCXX/CMakeCXXCompilerId.cpp.o "CMakeFiles/kafka.dir/CMakeFiles/4.0.3/CompilerIdCXX/apple-sdk.cpp.o" CMakeFiles/kafka.dir/api_settings.cpp.o CMakeFiles/kafka.dir/main.cpp.o -o kafka

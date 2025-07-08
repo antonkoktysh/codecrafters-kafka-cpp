@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -30,7 +31,6 @@ int main(int argc, char *argv[]) {
     std::cerr << "setsockopt failed: " << std::endl;
     return 1;
   }
-
   struct sockaddr_in server_addr{};
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = INADDR_ANY;
@@ -65,16 +65,16 @@ int main(int argc, char *argv[]) {
   std::cout << "Client connected\n";
 
   // read from client
-  char buffer[1024];
-  auto byte_read = recv(client_fd, buffer, sizeof(buffer), 0);
+  std::array<char, 1024> buffer;
+  auto byte_read = recv(client_fd, buffer.data(), sizeof(buffer), 0);
   if (byte_read <= 0) {
     std::cerr << "Coulnd't read from recv!\n";
     close(client_fd);
     close(server_fd);
   }
-  ResponseBuilder response_builder;
-  const char *response_buffer = response_builder.BuildResponse(buffer);
-  size_t response_size = response_builder.GetResponseSize();
+  ResponseHandler response_handler(buffer.data());
+  const char *response_buffer = response_handler.GetResponseBuffer();
+  size_t response_size = response_handler.GetResponseSize();
   write(client_fd, response_buffer, response_size);
 
   close(client_fd);

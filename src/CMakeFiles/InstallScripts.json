@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/antonkoktysh/codecrafters-kafka-cpp/src/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
