@@ -13,13 +13,6 @@ enum class KafkaErrorCode : int16_t {
     INVALID_REQUEST = 42,
     UNKNOWN_SERVER_ERROR = 48,
 };
-bool operator==(KafkaErrorCode a, int16_t b) {
-    return static_cast<int16_t>(a) == b;
-}
-
-bool operator==(int16_t a, KafkaErrorCode b) {
-    return a == static_cast<int16_t>(b);
-}
 
 enum class KafkaApiKey : int16_t {
     PRODUCE = 0,
@@ -30,21 +23,6 @@ enum class KafkaApiKey : int16_t {
     STOP_REPLICA = 5,
     API_VERSIONS = 18,
 };
-
-bool operator==(KafkaApiKey a, int16_t b) {
-    return static_cast<int16_t>(a) == b;
-}
-
-bool operator==(int16_t a, KafkaApiKey b) {
-    return a == static_cast<int16_t>(b);
-}
-bool operator!=(KafkaApiKey a, int16_t b) {
-    return static_cast<int16_t>(a) != b;
-}
-
-bool operator!=(int16_t a, KafkaApiKey b) {
-    return a != static_cast<int16_t>(b);
-}
 
 class ResponseHandler {
 private:
@@ -67,12 +45,10 @@ private:
         int16_t request_api_version;
         memcpy(&request_api_key, (buffer + 4),
                sizeof(request_api_key));  // Request API key
-        if (ntohs(request_api_key) != KafkaApiKey::API_VERSIONS) {
+        if (ntohs(request_api_key) != static_cast<int>(KafkaApiKey::API_VERSIONS)) {
             std::cerr << "Wrong API key request: " << ntohs(request_api_key) << '\n';
             throw std::runtime_error("Wrong API key request: " +
                                      std::to_string(htons(request_api_key)));
-            // TODO
-            // Close fd
         }
 
         memcpy(&request_api_version, buffer + 6,
