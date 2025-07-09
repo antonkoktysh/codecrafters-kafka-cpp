@@ -4,9 +4,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <thread>
 
 #include "KafkaResponse.h"
 class Socket {
@@ -21,6 +25,8 @@ public:
         }
     }
 
+    // TODO
+    // check unsuccesfull completion (if close return -1)
     ~Socket() {
         if (fd_ >= 0) {
             close(fd_);
@@ -56,26 +62,31 @@ public:
 class ClientConnection {
 private:
     int fd_;
+    std::atomic<bool> is_active_ = true;
 
 public:
     explicit ClientConnection(int fd) : fd_(fd) {
     }
     ~ClientConnection() {
-        if (fd_ >= 0)
+        if (fd_ >= 0) {
             close(fd_);
+        }
     }
 
     std::vector<char> read_full() {
         std::vector<char> buffer(1024);
-
-        ssize_t n = recv(fd_, buffer.data(), 1024, 0);
-        if (n <= 0) {
-            throw std::runtime_error("read error or connection closed");
+        ssize_t n = recv(fd_, buffer.data(), buffer.size(), 0);
+        if (n == 0) {
+            throw std::runtime_error("Connection closed by client");
+            is_active_ = false;
         }
-        buffer.resize(static_cast<size_t>(n));
+        if (n < 0) {
+            is_active_ = false;
+            throw std::system_error(errno, std::system_category(), "recv failed");
+        }
+        buffer.resize(n);
         return buffer;
     }
-
     void write_full(const char *data, size_t size) {
         write(fd_, data, size);
     }
@@ -83,8 +94,28 @@ public:
     operator int() const {
         return fd_;
     }
+    bool IsActive() const {
+        return is_active_;
+    }
 };
 
+// https://www.youtube.com/watch?v=xGDLkt-jBJ4&t=2659s
+// NB: smart_ptr pass by value
+void HandleClient(std::unique_ptr<ClientConnection> client) {
+    while (client->IsActive()) {
+        try {
+            std::cout << "Client connected" << std::endl;
+            auto buffer = client->read_full();
+            ResponseHandler response_handler(buffer.data());
+            const char *response_buffer = response_handler.GetResponseBuffer();
+            size_t response_size = response_handler.GetResponseSize();
+            client->write_full(response_buffer, response_size);
+            std::cout << "Client handled" << std::endl;
+        } catch (std::runtime_error &e) {
+            std::cout << "Client disconnected" << std::endl;
+        }
+    }
+}
 int main(int argc, char *argv[]) {
     // Disable output buffering
     std::cout << std::unitbuf;
@@ -110,28 +141,30 @@ int main(int argc, char *argv[]) {
         int connection_backlog = 5;
         server_fd.listen(connection_backlog);
 
-        std::cout << "Listening on port 9092...\n";
-        struct sockaddr_in client_addr{};
+        std::cout << "Listening on port 9092..." << std::endl;
 
-        socklen_t client_addr_len = sizeof(client_addr);
-        int client_fd = server_fd.accept(client_addr);
-        ClientConnection client(client_fd);
+        std::vector<std::thread> workers;
         while (true) {
             try {
-                std::cout << "Client connected\n";
-                auto buffer = client.read_full();
+                struct sockaddr_in client_addr{};
 
-                ResponseHandler response_handler(buffer.data());
-                const char *response_buffer = response_handler.GetResponseBuffer();
-                size_t response_size = response_handler.GetResponseSize();
-                client.write_full(response_buffer, response_size);
-            } catch (const std::exception &e) {
-                std::cout << "Error handling client: " << e.what() << "\n";
+                socklen_t client_addr_len = sizeof(client_addr);
+                int client_fd = server_fd.accept(client_addr);
+                std::unique_ptr<ClientConnection> client =
+                    std::make_unique<ClientConnection>(client_fd);
+                workers.emplace_back(HandleClient, std::move(client));
+            } catch (std::exception &e) {
+                std::cout << "Error occured" << e.what() << std::endl;
             }
         }
+
+        for (auto &t : workers) {
+            if (t.joinable())
+                t.join();
+        }
+
     } catch (const std::exception &e) {
         std::cout << "Server error: " << e.what() << std::endl;
     }
-
     return 0;
 }
