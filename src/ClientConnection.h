@@ -39,8 +39,8 @@ public:
         buffer.resize(n);
         return buffer;
     }
-    void write_full(const char *data, size_t size) {
-        if (write(fd_, data, size) < 0) {
+    void write_full(std::vector<char>& data, size_t size) {
+        if (write(fd_, data.data(), size) < 0) {
             throw std::runtime_error("Error occured during writing");
         }
     }
@@ -60,12 +60,14 @@ void HandleClient(std::unique_ptr<ClientConnection> client) {
         try {
             std::cout << "Client connected" << std::endl;
             auto buffer = client->read_full();
-            ResponseHandler response_handler(buffer.data());
-            const char *response_buffer = response_handler.GetResponseBuffer();
-            size_t response_size = response_handler.GetResponseSize();
+            std::unique_ptr<ApiVersionsHandler> response_handler =
+                std::make_unique<ApiVersionsHandler>(buffer);
+
+            auto response_buffer = response_handler->GetResponseBuffer();
+            size_t response_size = response_handler->ResponseSize();
             client->write_full(response_buffer, response_size);
             std::cout << "Client handled" << std::endl;
-        } catch (ClientDisconnectedError &e) {
+        } catch (ClientDisconnectedError& e) {
             std::cout << e.what() << std::endl;
         }
     }
