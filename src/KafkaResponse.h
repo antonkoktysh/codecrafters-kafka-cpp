@@ -161,7 +161,7 @@ private:
     std::vector<char> response_buffer_;
     std::vector<char> buffer_;
 
-    size_t request_header_size_ 0;
+    size_t request_header_size_ = 0;
     template <typename T>
     void Append(size_t offset, T& value, size_t count) {
         memcpy(response_buffer_.data() + offset, &value, count);
