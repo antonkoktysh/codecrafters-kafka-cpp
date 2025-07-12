@@ -7,22 +7,6 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
-enum class KafkaErrorCode : int16_t {
-    NONE = 0,
-    UNSUPPORTED_VERSION = 35,
-    INVALID_REQUEST = 42,
-    UNKNOWN_SERVER_ERROR = 48,
-};
-
-enum class KafkaApiKey : int16_t {
-    PRODUCE = 0,
-    FETCH = 1,
-    LIST_OFFSETS = 2,
-    METADATA = 3,
-    LEADER_AND_ISR = 4,
-    STOP_REPLICA = 5,
-    API_VERSIONS = 18,
-};
 
 struct ApiVersion {
     int16_t api_key = 75;
@@ -33,8 +17,7 @@ struct ApiVersion {
 
 class IRequestHandler {
 public:
-    virtual size_t ResponseSize() const {
-    }
+    virtual size_t ResponseSize() const = 0;
     virtual std::vector<char> GetResponseBuffer() const {
     }
     virtual ~IRequestHandler() = default;
@@ -69,8 +52,7 @@ private:
         int16_t request_api_version;
         memcpy(&request_api_key, (buffer_.data() + 4),
                sizeof(request_api_key));  // Request API key
-        if (ntohs(request_api_key) != static_cast<int>(KafkaApiKey::API_VERSIONS)) {
-            std::cerr << "Wrong API key request: " << ntohs(request_api_key) << '\n';
+        if (ntohs(request_api_key) != 18) {
             throw std::runtime_error("Wrong API key request: " +
                                      std::to_string(htons(request_api_key)));
         }
@@ -139,10 +121,11 @@ struct Topic {
     int8_t tag_buffer = 0;
 };
 
-class DescribeTopicPartitions : public IRequestHandler {
+class DescribeTopicPartitionsHandler : public IRequestHandler {
 public:
-    DescribeTopicPartitions(const std::vector<char>& buffer) : buffer_(buffer) {
+    DescribeTopicPartitionsHandler(const std::vector<char>& buffer) : buffer_(buffer) {
         response_buffer_.resize(1024);
+        HandleRequest();
     }
 
     size_t ResponseSize() const override {
@@ -152,7 +135,7 @@ public:
     std::vector<char> GetResponseBuffer() const override {
         return response_buffer_;
     }
-    ~DescribeTopicPartitions() = default;
+    ~DescribeTopicPartitionsHandler() = default;
 
 private:
     size_t header_size_ = 8;
@@ -167,36 +150,110 @@ private:
         memcpy(response_buffer_.data() + offset, &value, count);
     }
     void HandleRequest() {
-        int32_t message_size = header_size_ + body_size_;
-        response_size_ = message_size + sizeof(int32_t);
-        memcpy(response_buffer_.data(), &message_size, sizeof(message_size));  // messege_size
-
         BuildResponseHeader();
+        BuildResponseBody();
+        int32_t message_size = response_size_ - 4;
+        message_size = htonl(message_size);
+        memcpy(response_buffer_.data(), &message_size, sizeof(message_size));  // message_size
     }
 
     void BuildResponseHeader() {
+        request_header_size_ = 0;
         int16_t api_key;
         memcpy(&api_key, buffer_.data() + 4, sizeof(int16_t));
+        request_header_size_ += sizeof(int16_t);
 
         int16_t api_version;
         memcpy(&api_key, buffer_.data() + 6, sizeof(int16_t));
+        request_header_size_ += sizeof(int16_t);
 
         int32_t correlation_id;
         memcpy(&correlation_id, buffer_.data() + 8, sizeof(int32_t));
+        request_header_size_ += sizeof(int32_t);
 
         int16_t client_id_len;
         memcpy(&client_id_len, buffer_.data() + 12, sizeof(int16_t));
+        request_header_size_ += sizeof(int16_t);
 
-        std::string contents(client_id_len - 1, 's');
-        memcpy(contents.data(), buffer_.data() + 14, client_id_len - 1);
+        std::vector<char> contents(ntohs(client_id_len));
+        memcpy(contents.data(), buffer_.data() + 14, ntohs(client_id_len));
+        request_header_size_ += contents.size();
 
         int8_t tag_buffer = 0;
+        request_header_size_ += sizeof(tag_buffer);
 
         Append(4, correlation_id, sizeof(int32_t));
         Append(8, tag_buffer, sizeof(int8_t));
-        request_header_size_ = 10 + contents.size();
     }
+
     void BuildResponseBody() {
+        size_t request_offset = request_header_size_ + sizeof(int32_t);
+
         int8_t topics_array_len;
+        memcpy(&topics_array_len, buffer_.data() + request_offset, sizeof(topics_array_len));
+        request_offset += sizeof(topics_array_len);
+
+        int8_t topic_name_len;
+        memcpy(&topic_name_len, buffer_.data() + request_offset, sizeof(topic_name_len));
+        request_offset += sizeof(topic_name_len);
+
+        std::vector<char> topic_name(topic_name_len - 1);
+        memcpy(topic_name.data(), buffer_.data() + request_offset, topic_name_len - 1);
+        request_offset += topic_name.size();
+
+        int8_t topic_tag_buffer;
+        memcpy(&topic_tag_buffer, buffer_.data() + request_offset, sizeof(topic_tag_buffer));
+        request_offset += sizeof(topic_tag_buffer);
+
+        request_offset += sizeof(int32_t);
+        int8_t next_cursor;
+        memcpy(&next_cursor, buffer_.data() + request_offset, sizeof(next_cursor));
+        request_offset += 1;
+
+        size_t response_offset = 9;
+        int32_t throttle_time_ms = htonl(0);
+        Append(response_offset, throttle_time_ms, sizeof(throttle_time_ms));
+        response_offset += sizeof(throttle_time_ms);
+
+        Append(response_offset, topics_array_len, sizeof(topics_array_len));
+        response_offset += sizeof(topics_array_len);
+
+        int16_t error_code = htons(3);
+        Append(response_offset, error_code, sizeof(error_code));
+        response_offset += sizeof(error_code);
+
+        memcpy(response_buffer_.data() + response_offset, &topic_name_len, sizeof(int8_t));
+        response_offset += sizeof(int8_t);
+        memcpy(response_buffer_.data() + response_offset, topic_name.data(), topic_name.size());
+        response_offset += topic_name.size();
+
+        // Topic ID
+        std::array<char, 16> topic_id;
+        topic_id.fill(0);
+        memcpy(response_buffer_.data() + response_offset, topic_id.data(), topic_id.size());
+        response_offset += 16;
+
+        int8_t is_internal = 0;
+        Append(response_offset, is_internal, sizeof(is_internal));
+        response_offset += sizeof(is_internal);
+
+        int8_t patrtitions_array = 1;
+        Append(response_offset, patrtitions_array, sizeof(patrtitions_array));
+        response_offset += sizeof(patrtitions_array);
+
+        int32_t operations = 0;
+        Append(response_offset, operations, sizeof(operations));
+        response_offset += sizeof(operations);
+
+        int8_t tag_buffer = 0;
+        Append(response_offset, tag_buffer, sizeof(tag_buffer));
+        response_offset += sizeof(tag_buffer);
+
+        Append(response_offset, next_cursor, sizeof(next_cursor));
+        response_offset += sizeof(next_cursor);
+
+        Append(response_offset, tag_buffer, sizeof(tag_buffer));
+        response_offset += sizeof(tag_buffer);
+        response_size_ = response_offset;
     }
 };

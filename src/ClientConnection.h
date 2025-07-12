@@ -60,9 +60,15 @@ void HandleClient(std::unique_ptr<ClientConnection> client) {
         try {
             std::cout << "Client connected" << std::endl;
             auto buffer = client->read_full();
-            std::unique_ptr<ApiVersionsHandler> response_handler =
-                std::make_unique<ApiVersionsHandler>(buffer);
-
+            int16_t api_key;
+            memcpy(&api_key, buffer.data() + 4, sizeof(api_key));
+            std::cout << ntohs(api_key) << std::endl;
+            std::unique_ptr<IRequestHandler> response_handler;
+            if (ntohs(api_key) == 18) {
+                response_handler = std::make_unique<ApiVersionsHandler>(buffer);
+            } else {
+                response_handler = std::make_unique<DescribeTopicPartitionsHandler>(buffer);
+            }
             auto response_buffer = response_handler->GetResponseBuffer();
             size_t response_size = response_handler->ResponseSize();
             client->write_full(response_buffer, response_size);
