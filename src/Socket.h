@@ -5,7 +5,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "ClientConnection.h"
+#include "client_connection.h"
 
 class Socket {
 private:
@@ -27,8 +27,8 @@ public:
         }
     }
 
-    void bind(sockaddr_in &address) {
-        if (::bind(fd_, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) != 0) {
+    void bind(sockaddr_in& address) {
+        if (::bind(fd_, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) != 0) {
             throw BindError();
         }
     }
@@ -38,10 +38,9 @@ public:
             throw ListenError();
         }
     }
-
-    int accept(sockaddr_in &client_addr) {
+    int accept(sockaddr_in& client_addr) {
         socklen_t addr_len = sizeof(client_addr);
-        int client_fd = ::accept(fd_, reinterpret_cast<struct sockaddr *>(&client_addr), &addr_len);
+        int client_fd = ::accept(fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
         if (client_fd < 0) {
             throw AcceptError();
         }

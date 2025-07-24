@@ -11,8 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "ClientConnection.h"
-#include "ServerExceptions.h"
 #include "Socket.h"
 
 int main(int argc, char* argv[]) {
@@ -52,6 +50,7 @@ int main(int argc, char* argv[]) {
                 workers.emplace_back(HandleClient, std::move(client));
             } catch (std::exception& e) {
                 std::cout << "Client Error occured" << e.what() << std::endl;
+                break;
             }
         }
 
