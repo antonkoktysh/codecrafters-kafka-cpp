@@ -8,6 +8,9 @@ struct Topic {
 };
 
 struct Partition {
+    Partition(int16_t code, int32_t index) : error_code(code), partition_index(index) {
+
+    }
     int16_t error_code;
     int32_t partition_index;
     int32_t leader_id;

@@ -31,8 +31,9 @@ std::vector<ResponseTopic> DescribeTopicRequest::ProcessResponseTopics() const {
         }
 
         if (metadata.CountPartitions(response_topic.topic_id)) {
+            auto to_find = metadata.FindPartitions(response_topic.topic_id).value();
             for (std::int32_t partition_id :
-                 metadata.FindPartitions(response_topic.topic_id).value()) {
+                 to_find) {
                 response_topic.partitions_array.emplace_back(0, partition_id);
             }
         }

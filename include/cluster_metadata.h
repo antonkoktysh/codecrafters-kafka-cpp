@@ -184,8 +184,9 @@ private:
             }
             case 3: {
                 auto partition_id = reader.ReadInt32();
+                std::cout << "PART_IND" << partition_id << " " << (partition_id) << std::endl;
                 auto topic_id = reader.ReadInt128();
-                id_partitions_[topic_id].push_back(partition_id);
+                id_partitions_[topic_id].push_back(ntohl(partition_id));
                 break;
             }
             case 12:
